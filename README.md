@@ -6,7 +6,7 @@
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
 **Author:** [pr-fuzzylogic](https://github.com/pr-fuzzylogic)
-**Repo:** https://github.com/pr-fuzzylogic/vehicle-dashcam-scratch-collision-automated-recognition
+**Repo:** https://github.com/pr-fuzzylogic/v-dash-scar
 
 A tool for scanning large dashcam footage archives to locate a specific incident
 (e.g. the moment your car got scratched) inside a user-defined region of interest
@@ -97,8 +97,8 @@ weights.
 ### Windows (PowerShell)
 
 ```powershell
-git clone https://github.com/pr-fuzzylogic/vehicle-dashcam-scratch-collision-automated-recognition.git
-cd vehicle-dashcam-scratch-collision-automated-recognition
+git clone https://github.com/pr-fuzzylogic/v-dash-scar.git
+cd v-dash-scar
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
@@ -121,8 +121,8 @@ winget install Gyan.FFmpeg
 ### Windows (cmd.exe)
 
 ```bat
-git clone https://github.com/pr-fuzzylogic/vehicle-dashcam-scratch-collision-automated-recognition.git
-cd vehicle-dashcam-scratch-collision-automated-recognition
+git clone https://github.com/pr-fuzzylogic/v-dash-scar.git
+cd v-dash-scar
 python -m venv .venv
 .venv\Scripts\activate.bat
 python -m pip install --upgrade pip
@@ -133,8 +133,8 @@ python -c "from ultralytics import YOLO; YOLO('yolo11n.pt'); YOLO('yolo11n-seg.p
 ### macOS / Linux (bash/zsh)
 
 ```bash
-git clone https://github.com/pr-fuzzylogic/vehicle-dashcam-scratch-collision-automated-recognition.git
-cd vehicle-dashcam-scratch-collision-automated-recognition
+git clone https://github.com/pr-fuzzylogic/v-dash-scar.git
+cd v-dash-scar
 chmod +x install.sh
 ./install.sh
 ```
