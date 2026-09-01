@@ -1,0 +1,6 @@
+# Dependency version ranges verified as of 2026-09-01.
+# Upper bounds (<X.0.0) guard against breaking changes in the next major release.
+opencv-python>=4.9.0,<6.0.0
+torch>=2.13.0,<3.0.0
+ultralytics>=8.4.0,<9.0.0
+lapx>=0.5.5,<1.0.0

@@ -1,0 +1,70 @@
+# ============================================================================
+# V-DASH-SCAR .gitignore
+# ============================================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- Virtual environment ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- YOLO model weights (downloaded by install script / ultralytics) ---
+*.pt
+*.onnx
+*.engine
+yolo11n.pt
+yolo11n-seg.pt
+
+# --- Ultralytics runtime cache/config ---
+runs/
+.config/Ultralytics/
+Ultralytics/
+
+# --- Tool output (user-generated results, potentially large and/or private) ---
+output/
+Results/
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.avi
+*.AVI
+*.ts
+*_hit.jpg
+report.csv
+status.json
+analyzer.log
+v-dash-scar.log
+
+# --- Logs ---
+*.log
+
+# --- OS-specific files ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Environment / secrets ---
+.env
+.env.*
+
+# --- Misc ---
+*.tmp
+*.bak
