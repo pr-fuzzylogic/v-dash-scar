@@ -160,6 +160,7 @@ def parse_args():
     parser.add_argument("--fast-cut", action="store_true",
                          help="Use fast keyframe-based ffmpeg cut (-c copy). Less precise, no re-encode.")
     parser.add_argument("--workers", type=int, default=2, help="Number of parallel worker processes (default 2)")
+    parser.add_argument("--bump-detection", action="store_true", help="Enable global camera bump detection filtering")
     parser.add_argument("--resume", action="store_true",
                          help="Skip files already recorded in a previous run's status.json for the same method")
     parser.add_argument("--verbose-timing", action="store_true",
@@ -413,7 +414,9 @@ def process_video_task(task):
     roi_area = max(1, (rx2 - rx1) * (ry2 - ry1))
 
     try:
-        cap = cv2.VideoCapture(video_path)
+        # Request hardware-accelerated decoding across platforms
+        params = [cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY]
+        cap = cv2.VideoCapture(video_path, cv2.CAP_ANY, params)
         if not cap.isOpened():
             return video_path, False, [], "Could not open file"
 
@@ -423,6 +426,7 @@ def process_video_task(task):
         merge_threshold_sec = opts["merge_sec"]
         padding_sec = opts["padding_sec"]
         verbose_timing = opts.get("verbose_timing", False)
+        bump_detection = opts.get("bump_detection", False)
 
         windows = merge_windows(restrict_windows, padding_sec) if restrict_windows else None
 
@@ -432,6 +436,7 @@ def process_video_task(task):
         first_hit_frame_saved = False
         hit_found_in_file = False
         prev_roi_gray = None
+        prev_global_gray = None
 
         model = _WORKER_MODEL
         device = _WORKER_DEVICE
@@ -457,13 +462,35 @@ def process_video_task(task):
             hit = False
             debug_frame = None
             boxes = None
+            gray_frame_cache = None
 
             inference_start = time.perf_counter()
 
+            bump_detected = False
+            if bump_detection:
+                gray_frame_cache = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                small_gray = cv2.resize(gray_frame_cache, (320, 180))
+                curr_global_gray = np.float32(small_gray)
+
+                if prev_global_gray is not None:
+                    shift, response = cv2.phaseCorrelate(prev_global_gray, curr_global_gray)
+                    mag = np.sqrt(shift[0]**2 + shift[1]**2)
+                    if mag > 2.0:
+                        bump_detected = True
+                prev_global_gray = curr_global_gray
+
+            if bump_detected:
+                inference_end = time.perf_counter()
+                total_inference_time += (inference_end - inference_start)
+                decode_start = time.perf_counter()
+                continue
+
             if method == 1:
-                curr_roi_crop = frame[ry1:ry2, rx1:rx2]
-                if curr_roi_crop.size > 0:
-                    curr_roi_gray = cv2.cvtColor(curr_roi_crop, cv2.COLOR_BGR2GRAY)
+                if gray_frame_cache is None:
+                    gray_frame_cache = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+                curr_roi_gray = gray_frame_cache[ry1:ry2, rx1:rx2]
+                if curr_roi_gray.size > 0:
                     curr_roi_gray = cv2.GaussianBlur(curr_roi_gray, (7, 7), 0)
 
                     if prev_roi_gray is not None and frame_idx > 30:
@@ -476,10 +503,6 @@ def process_video_task(task):
                     prev_roi_gray = curr_roi_gray
 
             elif method == 2:
-                # Intentionally NOT class-filtered: a wheelie bin, a person, a
-                # cleaning cart etc. can all be the relevant object, and
-                # filtering by class risks missing the real event (e.g. an
-                # object rolling into frame before the person appears).
                 results = model.predict(source=frame, conf=opts["conf"], imgsz=640,
                                          device=device, verbose=False)
                 if results[0].boxes is not None:
@@ -673,7 +696,10 @@ class VDashScarApp(ctk.CTk):
         self.resume_var = ctk.BooleanVar(value=bool(self.args.resume))
         ctk.CTkCheckBox(frame, text="Resume (skip files already in status.json)", variable=self.resume_var).grid(row=6, column=0, columnspan=3, padx=10, pady=5, sticky="w")
 
-        ctk.CTkButton(frame, text="Start Analysis", command=self.start_processing, fg_color="green").grid(row=7, column=0, columnspan=3, pady=30)
+        self.bump_var = ctk.BooleanVar(value=bool(self.args.bump_detection))
+        ctk.CTkCheckBox(frame, text="Enable Camera Bump Detection", variable=self.bump_var).grid(row=7, column=0, columnspan=3, padx=10, pady=5, sticky="w")
+
+        ctk.CTkButton(frame, text="Start Analysis", command=self.start_processing, fg_color="green").grid(row=8, column=0, columnspan=3, pady=30)
 
     def build_progress_tab(self):
         self.log_box = ctk.CTkTextbox(self.tab_progress, state="normal", wrap="word")
@@ -840,6 +866,7 @@ class VDashScarApp(ctk.CTk):
             "padding_sec": self.args.padding_sec,
             "fast_cut": self.args.fast_cut,
             "verbose_timing": self.args.verbose_timing,
+            "bump_detection": self.bump_var.get(),
         }
 
         resume = bool(self.resume_var.get())
