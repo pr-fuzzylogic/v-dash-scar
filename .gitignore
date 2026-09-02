@@ -18,6 +18,7 @@ dist/
 venv/
 env/
 ENV/
+.envrc
 
 # --- YOLO model weights (downloaded by install script / ultralytics) ---
 *.pt
