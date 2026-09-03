@@ -3,7 +3,7 @@
 Vehicle Dashcam Scratch and Collision Automated Recognition (V DASH SCAR).
 
 Author: pr-fuzzylogic
-Repo: https://github.com/pr-fuzzylogic/vehicle-dashcam-scratch-collision-automated-recognition
+Repo: https://github.com/pr-fuzzylogic/v-dash-scar
 Version: 1.1.0
 License: MIT (see LICENSE)
 
@@ -18,7 +18,8 @@ without class filtering. The third method applies YOLO segmentation with
 class filtering and precise mask overlap testing, optionally combined
 with ByteTrack.
 
-For every method, output is written under a Method_X_Output directory
+For every method, output is written under a method specific directory
+(Method_1_Binary, Method_2_YOLO_BBox, Method_3_YOLO_Seg)
 containing the first hit frame as a JPEG with the ROI and detection boxes
 drawn on it, an extracted MP4 clip for each detected event, a link or
 copy of the source video, a unified report.csv describing hit status and
@@ -28,7 +29,7 @@ resume feature, and a full run log.
 Example invocation:
     python v-dash-scar.py --sample sample.mp4 --input ./INPUT_DIR --output ./OUTPUT_DIR --methods 1,2,3
 
-Version 1.2.0 addresses several issues found in the previous iteration.
+Version 1.1.0 addresses several issues found in the previous iteration.
 The mask intersection test previously only checked whether a mask vertex
 fell inside the ROI, which produced false negatives whenever the ROI sat
 entirely inside a larger mask or a mask edge crossed the ROI without a
@@ -86,9 +87,9 @@ from ultralytics import YOLO
 __title__ = "Vehicle Dashcam Scratch and Collision Automated Recognition"
 __short_name__ = "V-DASH-SCAR"
 __author__ = "pr-fuzzylogic"
-__version__ = "1.2.0"
+__version__ = "1.1.0"
 __license__ = "MIT"
-__repo__ = "https://github.com/pr-fuzzylogic/vehicle-dashcam-scratch-collision-automated-recognition"
+__repo__ = "https://github.com/pr-fuzzylogic/v-dash-scar"
 
 DEFAULT_EXTENSIONS = [".mp4", ".mov", ".avi", ".ts"]
 
@@ -117,6 +118,11 @@ METHOD3_CLASSES = [0, 1, 2, 3, 5, 7, 24, 26, 28, 36]
 BUMP_SHIFT_THRESHOLD = 2.0
 BUMP_DOWNSCALE_SIZE = (320, 180)
 
+METHOD_DIR_NAMES = {
+    1: "Method_1_Binary",
+    2: "Method_2_YOLO_BBox",
+    3: "Method_3_YOLO_Seg"
+}
 
 def print_banner():
     """Prints the tool banner and version information to standard output."""
@@ -233,8 +239,8 @@ def find_video_files(input_dir, extensions, output_dir=None):
 
     skip_dirs = []
     if output_dir:
-        for m in [1, 2, 3]:
-            skip_dirs.append(os.path.abspath(os.path.join(output_dir, f"Method_{m}_Output")))
+        for m, dname in METHOD_DIR_NAMES.items():
+            skip_dirs.append(os.path.abspath(os.path.join(output_dir, dname)))
 
     for root, dirs, files in os.walk(input_dir):
         dirs[:] = [d for d in dirs if os.path.abspath(os.path.join(root, d)) not in skip_dirs]
@@ -867,12 +873,6 @@ class VDashScarApp(ctk.CTk):
             self.start_status_label.configure(text="Stopping active tasks, the Start button will unlock automatically...")
             self.after(1000, self.wait_for_cancel_loop)
 
-    def wait_for_cancel_loop(self):
-        if self.is_pipeline_running:
-            self.log_box.insert("end", ".")
-            self.log_box.see("end")
-            self.after(1000, self.wait_for_cancel_loop)
-
     def build_review_tab(self):
         self.review_split = ctk.CTkFrame(self.tab_review)
         self.review_split.pack(fill="both", expand=True)
@@ -1074,7 +1074,7 @@ class VDashScarApp(ctk.CTk):
                 elif method == 3:
                     ensure_coreml_export("yolo11n-seg.pt", "yolo11n_seg", imgsz, "segment")
 
-            method_out_dir = os.path.join(self.output_dir.get(), f"Method_{method}_Output")
+            method_out_dir = os.path.join(self.output_dir.get(), METHOD_DIR_NAMES[method])
             os.makedirs(method_out_dir, exist_ok=True)
 
             method_key = str(method)
@@ -1208,65 +1208,6 @@ class VDashScarApp(ctk.CTk):
 
     def change_speed(self, value):
         self.playback_speed = float(value.replace("x", ""))
-
-    def play_clip(self, clip_path):
-        if self.play_after_id is not None:
-            self.after_cancel(self.play_after_id)
-            self.play_after_id = None
-
-        if self.video_cap is not None:
-            self.video_cap.release()
-
-        self.current_clip_path = clip_path
-        self.video_cap = cv2.VideoCapture(clip_path)
-
-        fps = self.video_cap.get(cv2.CAP_PROP_FPS)
-        self.video_fps = fps if (fps and fps > 0) else 30.0
-
-        total_frames = int(self.video_cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if total_frames > 0:
-            self.timeline.configure(to=total_frames - 1)
-        self.timeline.set(0)
-
-        self.playing = True
-        self.play_button.configure(text="Pause")
-        self.update_frame()
-
-    def toggle_playback(self):
-        if not self.video_cap or not self.video_cap.isOpened():
-            return
-
-        self.playing = not self.playing
-        if self.playing:
-            self.play_button.configure(text="Pause")
-            self.update_frame()
-        else:
-            self.play_button.configure(text="Play")
-            if self.play_after_id is not None:
-                self.after_cancel(self.play_after_id)
-                self.play_after_id = None
-
-    def seek_video(self, value):
-        if not self.video_cap or not self.video_cap.isOpened():
-            return
-
-        if self.play_after_id is not None:
-            self.after_cancel(self.play_after_id)
-            self.play_after_id = None
-
-        frame_idx = int(value)
-        self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-
-        ret, frame = self.video_cap.read()
-        if ret:
-            frame = resize_with_aspect_ratio(frame, 640, 360)
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            img = Image.fromarray(frame)
-            self.current_frame_image = ctk.CTkImage(light_image=img, dark_image=img, size=(640, 360))
-            self.video_label.configure(image=self.current_frame_image, text="")
-
-        if self.playing:
-            self.play_after_id = self.after(10, self.update_frame)
 
     def update_frame(self):
         if self.play_after_id is not None:

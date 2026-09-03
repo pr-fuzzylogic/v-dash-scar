@@ -252,6 +252,9 @@ python v-dash-scar.py --sample file.mp4 --input ./FRONT --output ./Results --met
 | `--padding-sec` | `3.0` | Extra time margin added before/after each exported clip |
 | `--fast-cut` | disabled | Fast clip extraction via `-c copy` (approximate, no re-encode) - default is an accurate re-encode |
 | `--workers` | `2` | Number of parallel worker processes |
+| `--bump-detection` | disabled | Enable a global camera bump filter based on phase correlation |
+| `--imgsz` | `640` | Inference resolution used by the YOLO models (640 or 1280) |
+| `--coreml` | disabled | Use CoreML hardware acceleration on macOS |
 | `--resume` | disabled | Resume an interrupted run based on the saved `status.json` |
 | `--verbose-timing` | disabled | Log detailed per-file decode/inference totals; without this flag, only a compact per-frame average is logged |
 
@@ -298,4 +301,4 @@ MIT - see the `LICENSE` file.
 
 ---
 
-*V-DASH-SCAR v1.0.0 - built by [pr-fuzzylogic](https://github.com/pr-fuzzylogic)*
+*V-DASH-SCAR v1.1.0 - built by [pr-fuzzylogic](https://github.com/pr-fuzzylogic)*
