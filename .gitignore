@@ -24,6 +24,7 @@ ENV/
 *.pt
 *.onnx
 *.engine
+*.mlpackage/
 yolo11n.pt
 yolo11n-seg.pt
 

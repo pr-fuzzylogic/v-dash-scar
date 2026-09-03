@@ -288,7 +288,10 @@ def ensure_coreml_export(pt_path, model_prefix, imgsz, task):
     before the pool is created, removes that race entirely. Workers only
     ever load an already exported package.
     """
-    target_path = coreml_package_path(model_prefix, imgsz)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    abs_pt_path = os.path.join(script_dir, pt_path)
+    target_path = os.path.join(script_dir, coreml_package_path(model_prefix, imgsz))
+
     if os.path.exists(target_path):
         return target_path
 
@@ -304,12 +307,14 @@ def ensure_coreml_export(pt_path, model_prefix, imgsz, task):
             return target_path
 
     try:
-        logging.info(f"Exporting {pt_path} to CoreML at resolution {imgsz}, this runs once and is then reused")
-        model = YOLO(pt_path)
-        model.export(format="coreml", imgsz=imgsz, nms=True)
-        exported_default_name = os.path.splitext(pt_path)[0] + ".mlpackage"
-        if os.path.exists(exported_default_name) and exported_default_name != target_path:
-            os.replace(exported_default_name, target_path)
+        logging.info(f"Exporting {abs_pt_path} to CoreML at resolution {imgsz}, this runs once and is then reused")
+        model = YOLO(abs_pt_path)
+        exported_path = model.export(format="coreml", imgsz=imgsz, nms=True)
+
+        if exported_path and os.path.exists(exported_path) and exported_path != target_path:
+            if os.path.exists(target_path):
+                shutil.rmtree(target_path)
+            shutil.move(exported_path, target_path)
     finally:
         if os.path.exists(lock_path):
             os.remove(lock_path)
@@ -327,12 +332,14 @@ def init_worker(method, use_coreml=False, imgsz=640):
     global _WORKER_MODEL, _WORKER_DEVICE
     _WORKER_DEVICE = get_device()
 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
     if method == 2:
-        base_model = "yolo11n.pt"
+        base_model = os.path.join(script_dir, "yolo11n.pt")
         model_prefix = "yolo11n"
         task = "detect"
     elif method == 3:
-        base_model = "yolo11n-seg.pt"
+        base_model = os.path.join(script_dir, "yolo11n-seg.pt")
         model_prefix = "yolo11n_seg"
         task = "segment"
     else:
@@ -341,7 +348,7 @@ def init_worker(method, use_coreml=False, imgsz=640):
         return
 
     if use_coreml and platform.system() == "Darwin":
-        coreml_path = coreml_package_path(model_prefix, imgsz)
+        coreml_path = os.path.join(script_dir, coreml_package_path(model_prefix, imgsz))
         _WORKER_MODEL = YOLO(coreml_path, task=task)
         _WORKER_DEVICE = "cpu"
     else:
@@ -754,40 +761,58 @@ class VDashScarApp(ctk.CTk):
         frame.pack(fill="both", expand=True, padx=20, pady=20)
 
         ctk.CTkLabel(frame, text="Sample Video Path").grid(row=0, column=0, padx=10, pady=10, sticky="w")
-        ctk.CTkEntry(frame, textvariable=self.sample_path, width=400).grid(row=0, column=1, padx=10, pady=10)
-        ctk.CTkButton(frame, text="Browse", command=self.browse_sample).grid(row=0, column=2, padx=10, pady=10)
+        self.entry_sample = ctk.CTkEntry(frame, textvariable=self.sample_path, width=400)
+        self.entry_sample.grid(row=0, column=1, padx=10, pady=10)
+        self.btn_browse_sample = ctk.CTkButton(frame, text="Browse", command=self.browse_sample)
+        self.btn_browse_sample.grid(row=0, column=2, padx=10, pady=10)
 
         ctk.CTkLabel(frame, text="Input Directory").grid(row=1, column=0, padx=10, pady=10, sticky="w")
-        ctk.CTkEntry(frame, textvariable=self.input_dir, width=400).grid(row=1, column=1, padx=10, pady=10)
-        ctk.CTkButton(frame, text="Browse", command=self.browse_input).grid(row=1, column=2, padx=10, pady=10)
+        self.entry_input = ctk.CTkEntry(frame, textvariable=self.input_dir, width=400)
+        self.entry_input.grid(row=1, column=1, padx=10, pady=10)
+        self.btn_browse_input = ctk.CTkButton(frame, text="Browse", command=self.browse_input)
+        self.btn_browse_input.grid(row=1, column=2, padx=10, pady=10)
 
         ctk.CTkLabel(frame, text="Output Directory").grid(row=2, column=0, padx=10, pady=10, sticky="w")
-        ctk.CTkEntry(frame, textvariable=self.output_dir, width=400).grid(row=2, column=1, padx=10, pady=10)
-        ctk.CTkButton(frame, text="Browse", command=self.browse_output).grid(row=2, column=2, padx=10, pady=10)
+        self.entry_output = ctk.CTkEntry(frame, textvariable=self.output_dir, width=400)
+        self.entry_output.grid(row=2, column=1, padx=10, pady=10)
+        self.btn_browse_output = ctk.CTkButton(frame, text="Browse", command=self.browse_output)
+        self.btn_browse_output.grid(row=2, column=2, padx=10, pady=10)
 
         self.m1_var = ctk.BooleanVar(value=1 in requested_methods)
         self.m2_var = ctk.BooleanVar(value=2 in requested_methods)
         self.m3_var = ctk.BooleanVar(value=3 in requested_methods)
 
-        ctk.CTkCheckBox(frame, text="Method 1 Binary pixel difference", variable=self.m1_var).grid(row=3, column=0, columnspan=3, padx=10, pady=5, sticky="w")
-        ctk.CTkCheckBox(frame, text="Method 2 YOLO bounding boxes", variable=self.m2_var).grid(row=4, column=0, columnspan=3, padx=10, pady=5, sticky="w")
-        ctk.CTkCheckBox(frame, text="Method 3 YOLO segmentation", variable=self.m3_var).grid(row=5, column=0, columnspan=3, padx=10, pady=5, sticky="w")
+        self.chk_m1 = ctk.CTkCheckBox(frame, text="Method 1 Binary pixel difference", variable=self.m1_var)
+        self.chk_m1.grid(row=3, column=0, columnspan=3, padx=10, pady=5, sticky="w")
+        self.chk_m2 = ctk.CTkCheckBox(frame, text="Method 2 YOLO bounding boxes", variable=self.m2_var)
+        self.chk_m2.grid(row=4, column=0, columnspan=3, padx=10, pady=5, sticky="w")
+        self.chk_m3 = ctk.CTkCheckBox(frame, text="Method 3 YOLO segmentation", variable=self.m3_var)
+        self.chk_m3.grid(row=5, column=0, columnspan=3, padx=10, pady=5, sticky="w")
 
         self.resume_var = ctk.BooleanVar(value=bool(self.args.resume))
-        ctk.CTkCheckBox(frame, text="Resume by skipping files already recorded in status.json", variable=self.resume_var).grid(row=6, column=0, columnspan=3, padx=10, pady=5, sticky="w")
+        self.chk_resume = ctk.CTkCheckBox(frame, text="Resume by skipping files already recorded in status.json", variable=self.resume_var)
+        self.chk_resume.grid(row=6, column=0, columnspan=3, padx=10, pady=5, sticky="w")
 
         self.bump_var = ctk.BooleanVar(value=bool(self.args.bump_detection))
-        ctk.CTkCheckBox(frame, text="Enable camera bump detection", variable=self.bump_var).grid(row=7, column=0, columnspan=3, padx=10, pady=5, sticky="w")
+        self.chk_bump = ctk.CTkCheckBox(frame, text="Enable camera bump detection", variable=self.bump_var)
+        self.chk_bump.grid(row=7, column=0, columnspan=3, padx=10, pady=5, sticky="w")
 
         self.imgsz_var = ctk.StringVar(value=str(getattr(self.args, "imgsz", 640)))
         ctk.CTkLabel(frame, text="Inference Resolution").grid(row=8, column=0, padx=10, pady=5, sticky="w")
-        ctk.CTkSegmentedButton(frame, variable=self.imgsz_var, values=["640", "1280"]).grid(row=8, column=1, padx=10, pady=5, sticky="w")
+        self.seg_imgsz = ctk.CTkSegmentedButton(frame, variable=self.imgsz_var, values=["640", "1280"])
+        self.seg_imgsz.grid(row=8, column=1, padx=10, pady=5, sticky="w")
 
         self.coreml_var = ctk.BooleanVar(value=bool(getattr(self.args, "coreml", False)))
+        self.chk_coreml = None
         if platform.system() == "Darwin":
-            ctk.CTkCheckBox(frame, text="Use CoreML acceleration on the Apple Neural Engine", variable=self.coreml_var).grid(row=9, column=0, columnspan=3, padx=10, pady=5, sticky="w")
+            self.chk_coreml = ctk.CTkCheckBox(frame, text="Use CoreML acceleration on the Apple Neural Engine", variable=self.coreml_var)
+            self.chk_coreml.grid(row=9, column=0, columnspan=3, padx=10, pady=5, sticky="w")
 
-        ctk.CTkButton(frame, text="Start Analysis", command=self.start_processing, fg_color="green").grid(row=10, column=0, columnspan=3, pady=30)
+        self.start_button = ctk.CTkButton(frame, text="Start Analysis", command=self.start_processing, fg_color="green")
+        self.start_button.grid(row=10, column=0, columnspan=3, pady=(30, 5))
+
+        self.start_status_label = ctk.CTkLabel(frame, text="", text_color="gray", font=("", 11))
+        self.start_status_label.grid(row=11, column=0, columnspan=3, pady=(0, 10))
 
     def build_progress_tab(self):
         self.log_box = ctk.CTkTextbox(self.tab_progress, state="normal", wrap="word")
@@ -808,6 +833,31 @@ class VDashScarApp(ctk.CTk):
         self.log("Stopping analysis, waiting for active tasks to finish")
         self.stop_button.configure(state="disabled")
         self.wait_for_cancel_loop()
+
+    def set_config_ui_state(self, state_str):
+        """Locks or unlocks the configuration tab widgets to prevent mid-run changes."""
+        self.entry_sample.configure(state=state_str)
+        self.btn_browse_sample.configure(state=state_str)
+        self.entry_input.configure(state=state_str)
+        self.btn_browse_input.configure(state=state_str)
+        self.entry_output.configure(state=state_str)
+        self.btn_browse_output.configure(state=state_str)
+        self.chk_m1.configure(state=state_str)
+        self.chk_m2.configure(state=state_str)
+        self.chk_m3.configure(state=state_str)
+        self.chk_resume.configure(state=state_str)
+        self.chk_bump.configure(state=state_str)
+        self.seg_imgsz.configure(state=state_str)
+        if self.chk_coreml is not None:
+            self.chk_coreml.configure(state=state_str)
+        self.start_button.configure(state=state_str)
+
+    def wait_for_cancel_loop(self):
+        if self.is_pipeline_running:
+            self.log_box.insert("end", ".")
+            self.log_box.see("end")
+            self.start_status_label.configure(text="Stopping active tasks, the Start button will unlock automatically...")
+            self.after(1000, self.wait_for_cancel_loop)
 
     def wait_for_cancel_loop(self):
         if self.is_pipeline_running:
@@ -883,9 +933,17 @@ class VDashScarApp(ctk.CTk):
         self.progress_bar.set(fraction)
 
     def start_processing(self):
+        if getattr(self, "is_pipeline_running", False):
+            self.log("Previous analysis is still stopping, please wait.")
+            return
+
         if not self.sample_path.get() or not self.input_dir.get() or not self.output_dir.get():
             self.log("Error, please fill all directory paths")
             return
+
+        self.set_config_ui_state("disabled")
+        self.start_status_label.configure(text="Analysis starting - select ROI in the OpenCV window")
+        self.update()
 
         self.is_cancelled = False
         self.is_pipeline_running = True
@@ -905,6 +963,9 @@ class VDashScarApp(ctk.CTk):
         if not ret:
             self.log("Error reading sample frame")
             self.stop_button.configure(state="disabled")
+            self.set_config_ui_state("normal")
+            self.start_status_label.configure(text="")
+            self.is_pipeline_running = False
             return
 
         overlay = frame.copy()
@@ -923,7 +984,12 @@ class VDashScarApp(ctk.CTk):
         if w == 0 or h == 0:
             self.log("Empty ROI selected, aborting")
             self.stop_button.configure(state="disabled")
+            self.set_config_ui_state("normal")
+            self.start_status_label.configure(text="")
+            self.is_pipeline_running = False
             return
+
+        self.start_status_label.configure(text="Analysis in progress...")
         self.roi_coords = (x, y, x + w, y + h)
 
         self.log("Starting analysis thread")
@@ -1093,6 +1159,8 @@ class VDashScarApp(ctk.CTk):
         self.is_pipeline_running = False
         self.after(0, self.load_review_tab)
         self.after(0, lambda: self.stop_button.configure(state="disabled"))
+        self.after(0, lambda: self.set_config_ui_state("normal"))
+        self.after(0, lambda: self.start_status_label.configure(text=""))
 
     def load_review_tab(self):
         self.tabview.set("Incident Browser")
