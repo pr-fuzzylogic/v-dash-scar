@@ -207,6 +207,8 @@ python v-dash-scar.py --version
 
 ### Interactive mode (GUI)
 
+![V-DASH-SCAR GUI](img/GUI.jpg)
+
 ```bash
 python v-dash-scar.py
 ```
