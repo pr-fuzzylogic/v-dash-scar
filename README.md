@@ -1,7 +1,7 @@
 # Vehicle Dashcam Scratch & Collision Automated Recognition (V-DASH-SCAR)
 
-![version](https://img.shields.io/badge/version-1.0.0-blue)
-![python](https://img.shields.io/badge/python-3.10%2B-blue)
+![version](https://img.shields.io/badge/version-1.1.0-blue)
+![python](https://img.shields.io/badge/python-3.11-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
@@ -81,7 +81,7 @@ to end.
 
 ## Requirements
 
-- Python 3.10 or newer
+- Python 3.11 (strongly recommended for macOS CoreML compatibility; 3.10 and 3.12 also supported)
 - ffmpeg available in PATH
 - (optional, but recommended) GPU: NVIDIA CUDA or Apple Silicon (MPS) - the script
   automatically detects the available device and falls back to CPU if no GPU is found

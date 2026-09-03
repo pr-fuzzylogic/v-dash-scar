@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 Write-Host "== Checking Python ==" -ForegroundColor Cyan
 $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) {
-    Write-Host "Python not found in PATH. Install Python 3.10+ from https://www.python.org/downloads/ and re-run this script." -ForegroundColor Red
+    Write-Host "Python not found in PATH. Install Python 3.11 from https://www.python.org/downloads/ and re-run this script." -ForegroundColor Red
     exit 1
 }
 python --version

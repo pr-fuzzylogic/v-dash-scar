@@ -9,12 +9,12 @@
 
 set -e
 
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+PYTHON_BIN="${PYTHON_BIN:-python3.11}"
 VENV_DIR=".venv"
 
 echo "== Checking Python =="
 if ! command -v "$PYTHON_BIN" &> /dev/null; then
-    echo "Python3 not found. Install Python 3.10+ first: https://www.python.org/downloads/"
+    echo "Python 3.11 not found. Install Python 3.11 first: https://www.python.org/downloads/"
     exit 1
 fi
 "$PYTHON_BIN" --version
