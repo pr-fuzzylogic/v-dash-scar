@@ -4,7 +4,7 @@ Vehicle Dashcam Scratch and Collision Automated Recognition (V DASH SCAR).
 
 Author: pr-fuzzylogic
 Repo: https://github.com/pr-fuzzylogic/vehicle-dashcam-scratch-collision-automated-recognition
-Version: 1.1.1
+Version: 1.1.0
 License: MIT (see LICENSE)
 
 A cascade pipeline for triaging large dashcam footage archives to locate
@@ -221,15 +221,23 @@ def merge_windows(windows, padding_sec):
     return [tuple(w) for w in merged]
 
 
-def find_video_files(input_dir, extensions):
+def find_video_files(input_dir, extensions, output_dir=None):
     """Recursively discovers video files matching the requested extensions.
 
     Extension comparison is case insensitive so names such as an uppercase
-    variant of a common extension are not silently missed.
+    variant of a common extension are not silently missed. Automatically skips
+    configured output directories to prevent analyzing previously generated clips.
     """
     wanted = {e.lower() for e in extensions}
     matches = []
-    for root, _dirs, files in os.walk(input_dir):
+
+    skip_dirs = []
+    if output_dir:
+        for m in [1, 2, 3]:
+            skip_dirs.append(os.path.abspath(os.path.join(output_dir, f"Method_{m}_Output")))
+
+    for root, dirs, files in os.walk(input_dir):
+        dirs[:] = [d for d in dirs if os.path.abspath(os.path.join(root, d)) not in skip_dirs]
         for name in files:
             ext = os.path.splitext(name)[1].lower()
             if ext in wanted:
@@ -916,12 +924,19 @@ class VDashScarApp(ctk.CTk):
             self.input_dir.set(path)
             if not self.output_dir.get():
                 self.output_dir.set(path)
+                self.check_resume_availability(path)
 
     def browse_output(self):
         init_dir = self.output_dir.get() or self.input_dir.get() or (os.path.dirname(self.sample_path.get()) if self.sample_path.get() else None)
         path = ctk.filedialog.askdirectory(initialdir=init_dir)
         if path:
             self.output_dir.set(path)
+            self.check_resume_availability(path)
+
+    def check_resume_availability(self, path):
+        if os.path.exists(os.path.join(path, STATUS_FILENAME)):
+            self.resume_var.set(True)
+            self.log("Status file found in the output directory. Resume option automatically enabled.")
 
     def log(self, message):
         """Appends a message to the log widget. Always runs on the main thread."""
@@ -1020,7 +1035,7 @@ class VDashScarApp(ctk.CTk):
         roi_coords = self.roi_coords
 
         extensions = [e.strip() for e in self.args.extensions.split(",")]
-        video_files = find_video_files(self.input_dir.get(), extensions)
+        video_files = find_video_files(self.input_dir.get(), extensions, self.output_dir.get())
 
         imgsz = int(self.imgsz_var.get())
         use_coreml = bool(self.coreml_var.get())
@@ -1263,10 +1278,22 @@ class VDashScarApp(ctk.CTk):
 
         start_time = time.perf_counter()
 
+        if not hasattr(self, 'last_frame_time'):
+            self.last_frame_time = start_time
+
+        # Target interval calculation per frame at current speed
+        target_interval_sec = (1.0 / self.video_fps) / self.playback_speed
+        elapsed_sec = start_time - self.last_frame_time
+
+        # Calculate frames to skip to maintain real time synchronization
+        frames_to_skip = int(elapsed_sec / target_interval_sec)
+
         if self.playback_speed > 1.0:
-            skip_count = int(self.playback_speed) - 1
-            for _ in range(skip_count):
-                self.video_cap.grab()
+            # Enforce minimum frame skip threshold for fast playback
+            frames_to_skip = max(frames_to_skip, int(self.playback_speed) - 1)
+
+        for _ in range(frames_to_skip):
+            self.video_cap.grab()
 
         ret, frame = self.video_cap.read()
 
@@ -1279,22 +1306,95 @@ class VDashScarApp(ctk.CTk):
 
             current_frame = int(self.video_cap.get(cv2.CAP_PROP_POS_FRAMES))
             self.timeline.set(current_frame)
+
+            # Time tracker adjustment incorporating skipped frames to prevent cumulative timing error
+            self.last_frame_time += (frames_to_skip + 1) * target_interval_sec
+
+            # Failsafe reset for extreme system stalls
+            if start_time - self.last_frame_time > 0.5:
+                 self.last_frame_time = start_time
         else:
             self.play_next_clip()
             return
 
-        render_cost = (time.perf_counter() - start_time) * 1000
-        base_interval = 1000.0 / self.video_fps
+        render_cost = (time.perf_counter() - start_time)
 
-        if self.playback_speed < 1.0:
-            target_interval = base_interval / self.playback_speed
-        else:
-            target_interval = base_interval
-
-        delay_ms = max(1, int(target_interval - render_cost))
+        # Next call delay derived from target interval minus render cost
+        delay_sec = target_interval_sec - render_cost
+        delay_ms = max(1, int(delay_sec * 1000))
 
         if self.playing:
             self.play_after_id = self.after(delay_ms, self.update_frame)
+
+    def play_clip(self, clip_path):
+        if self.play_after_id is not None:
+            self.after_cancel(self.play_after_id)
+            self.play_after_id = None
+
+        if self.video_cap is not None:
+            self.video_cap.release()
+
+        self.current_clip_path = clip_path
+        self.video_cap = cv2.VideoCapture(clip_path)
+
+        fps = self.video_cap.get(cv2.CAP_PROP_FPS)
+        self.video_fps = fps if (fps and fps > 0) else 30.0
+
+        total_frames = int(self.video_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames > 0:
+            self.timeline.configure(to=total_frames - 1)
+        self.timeline.set(0)
+
+        # Time tracking reset on clip change
+        if hasattr(self, 'last_frame_time'):
+            delattr(self, 'last_frame_time')
+
+        self.playing = True
+        self.play_button.configure(text="Pause")
+        self.update_frame()
+
+    def seek_video(self, value):
+        if not self.video_cap or not self.video_cap.isOpened():
+            return
+
+        if self.play_after_id is not None:
+            self.after_cancel(self.play_after_id)
+            self.play_after_id = None
+
+        frame_idx = int(value)
+        self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+
+        ret, frame = self.video_cap.read()
+        if ret:
+            frame = resize_with_aspect_ratio(frame, 640, 360)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(frame)
+            self.current_frame_image = ctk.CTkImage(light_image=img, dark_image=img, size=(640, 360))
+            self.video_label.configure(image=self.current_frame_image, text="")
+
+        # Time tracking reset on seek
+        if hasattr(self, 'last_frame_time'):
+            delattr(self, 'last_frame_time')
+
+        if self.playing:
+            self.play_after_id = self.after(10, self.update_frame)
+
+    def toggle_playback(self):
+        if not self.video_cap or not self.video_cap.isOpened():
+            return
+
+        self.playing = not self.playing
+        if self.playing:
+            self.play_button.configure(text="Pause")
+            # Time tracking reset on unpause
+            if hasattr(self, 'last_frame_time'):
+                delattr(self, 'last_frame_time')
+            self.update_frame()
+        else:
+            self.play_button.configure(text="Play")
+            if self.play_after_id is not None:
+                self.after_cancel(self.play_after_id)
+                self.play_after_id = None
 
     def delete_current_clip(self):
         if self.play_after_id is not None:

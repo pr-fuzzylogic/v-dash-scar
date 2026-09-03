@@ -1,4 +1,4 @@
-# Dependency version ranges verified as of 2026-09-01.
+# Dependency version ranges verified as of 2026-09-03.
 # Upper bounds (<X.0.0) guard against breaking changes in the next major release.
 opencv-python>=4.9.0,<6.0.0
 torch>=2.13.0,<3.0.0
